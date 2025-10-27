@@ -1,172 +1,150 @@
 from aiogram import Router, types
-
 from database import Database
-from keyboards import get_tasks_keyboard, get_prizes_keyboard
+from keyboards import get_main_child_keyboard, get_tasks_keyboard, get_children_keyboard
 
+# Создаем роутер
 router = Router()
+
 db = Database()
 
-@router.message(lambda message: message.text == "📝 Мои задания")
+# ЗАДАНИЯ
+@router.message(lambda message: message.text == "📋 Мои задания")
 async def cmd_my_tasks(message: types.Message):
-    current_child = db.get_current_child(message.from_user.id)
+    current_child = db.get_current_user(message.from_user.id)
     if not current_child:
-        await message.answer("❌ Сначала выберите ребенка через /start")
+        await message.answer("❌ Сначала войдите как сыночка через /start")
         return
     
-    user_data = db.get_user_by_child_name(current_child)
-    if not user_data:
-        await message.answer("❌ Ошибка: данные ребенка не найдены")
-        return
-    
-    child_name = current_child
-    tasks = db.get_tasks(child_name, completed=False)
-    completed_tasks = db.get_tasks(child_name, completed=True)
+    tasks = db.get_tasks(current_child, completed=False)
     
     if not tasks:
-        await message.answer("📝 У тебя пока нет заданий! Задания обновляются каждую неделю ✨")
+        await message.answer("📝 Нет 🎯!")
         return
     
-    await message.answer("📝 Твои текущие задания:", reply_markup=get_tasks_keyboard(tasks, show_complete=True))
+    text = f"📋 <b>Задания для {current_child.capitalize()}</b>\n\n"
+    # for task in tasks:
+    #     task_id, child_name, task_text, stars_reward, is_completed, is_weekly, completed_at, created_at = task
+    #     emoji = "🔄 " if is_weekly else ""
+    #     text += f"{emoji}{task_text} <b>(+{stars_reward}⭐)</b>\n"
     
-    if completed_tasks:
-        await message.answer("✅ Выполненные задания:", reply_markup=get_tasks_keyboard(completed_tasks, show_complete=False))
+    await message.answer(text, reply_markup=get_tasks_keyboard(tasks), parse_mode="HTML")
 
+# ЗВЕЗДЫ
 @router.message(lambda message: message.text == "⭐ Мои звезды")
 async def cmd_my_stars(message: types.Message):
-    current_child = db.get_current_child(message.from_user.id)
-    if not current_child:
-        await message.answer("❌ Сначала выберите ребенка через /start")
+    current_child = db.get_current_user(message.from_user.id)
+    if not current_child or current_child == "parent":
+        await message.answer("❌ Сначала войдите как сыночка через /start")
         return
     
-    user_data = db.get_user_by_child_name(current_child)
-    if user_data:
-        await message.answer(f"⭐ У {current_child.capitalize()} {user_data[4]} звезд!")
-
-# @router.message(lambda message: message.text == "🎁 Обменять звезды")
-# async def cmd_exchange(message: types.Message):
-#     current_child = db.get_current_child(message.from_user.id)
-#     if not current_child:
-#         await message.answer("❌ Сначала выберите ребенка через /start")
-#         return
+    stars = db.get_child_stars(current_child)
     
-#     prizes = db.get_prizes()
-#     user_data = db.get_user_by_child_name(current_child)
+    # Получаем разные типы заданий
+    pending_reward_tasks = db.get_pending_reward_tasks(current_child)
     
-#     if not prizes:
-#         await message.answer("🎁 Пока нет призов для обмена!")
-#         return
+    # Получаем общую статистику
+    import sqlite3
+    conn = sqlite3.connect('bot.db')
+    cursor = conn.cursor()
     
-#     await message.answer(
-#         f"⭐ У {current_child.capitalize()} {user_data[4]} звезд\n🎁 Выбери приз:",
-#         reply_markup=get_prizes_keyboard(prizes)
-#     )
+    # Всего выполненных заданий за все время
+    cursor.execute("SELECT COUNT(*) FROM tasks WHERE child_name = ? AND is_completed = TRUE", (current_child,))
+    total_completed = cursor.fetchone()[0]
+    
+    # Ожидающие выполнения задания
+    cursor.execute("SELECT COUNT(*) FROM tasks WHERE child_name = ? AND is_completed = FALSE", (current_child,))
+    pending_tasks = cursor.fetchone()[0]
+    
+    conn.close()
+    
+    text = f"⭐ <b>Статистика {current_child.capitalize()}</b>\n\n"
+    
+    # Текущий баланс
+    text += f"💰 <b>Текущие звезды:</b> {stars}⭐\n\n"
+    
+    # Задания ожидающие награды
+    if pending_reward_tasks:
+        text += f"✅ <b>Ожидают награды:</b> {len(pending_reward_tasks)} 🎯\n"
+        
+        total_pending_stars = sum(task[3] for task in pending_reward_tasks)
+        text += f"💫 <b>Будут начислены:</b> {total_pending_stars}⭐\n\n"
+        
+        text += "<b>Последние задания:</b>\n"
+        for i, task in enumerate(pending_reward_tasks[:5], 1):
+            task_id, child_name, task_text, stars_reward, is_completed, is_weekly, completed_at, created_at = task
+            emoji = "🔄 " if is_weekly else ""
+            text += f"   {i}. {emoji}{task_text} <b>(+{stars_reward}⭐)</b>\n"
+        
+        if len(pending_reward_tasks) > 5:
+            text += f"   ... и еще {len(pending_reward_tasks) - 5}\n"
+        
+        text += "\n"
+    
+    # Общая статистика
+    text += "📊 <b>Общая статистика:</b>\n"
+    text += f"   ✅ Выполнено за все время: {total_completed} 🎯\n"
+    text += f"   📝 Ожидает выполнения: {pending_tasks} 🎯\n"
+    
+    if pending_reward_tasks:
+        text += f"   🎁 Ожидают 🏆: {len(pending_reward_tasks)} 🎯\n"
+    
+    # Мотивационные сообщения
+    text += "\n"
+    if stars == 0 and not pending_reward_tasks:
+        text += "Выполняй 🎯 Зарабатывай ⭐ Получай 🏆"
+    elif stars > 0:
+        text += f"💫 У тебя {stars} ⭐ - Жди 🏆!"
+    elif pending_reward_tasks:
+        text += f"📋 Выполнено {len(pending_reward_tasks)} 🎯 - жди 🏆 в конце недели"
+    
+    await message.answer(text, parse_mode="HTML")
 
-
-@router.message(lambda message: message.text == "🚪 Выход")
-async def cmd_logout_button(message: types.Message):
-    db.set_current_child(message.from_user.id, None)
-    await message.answer(
-        "👋 Вы вышли из аккаунта. Используйте /start для входа.",
-        reply_markup=types.ReplyKeyboardRemove()
-    )
-
-@router.callback_query(lambda c: c.data.startswith('complete_task:'))
+# ВЫПОЛНЕНИЕ ЗАДАНИЙ
+@router.callback_query(lambda c: c.data.startswith('complete:'))
 async def process_task_completion(callback: types.CallbackQuery):
-    current_child = db.get_current_child(callback.from_user.id)
+    current_child = db.get_current_user(callback.from_user.id)
     if not current_child:
-        await callback.answer("❌ Сначала выберите ребенка")
+        await callback.answer("❌ Сначала войдите как сыночка")
         return
     
     task_id = int(callback.data.split(":")[1])
-    child_name = current_child
+    earned_stars = db.complete_task(task_id, current_child)
     
-    print(f"🔄 Начинаем выполнение задания {task_id} для ребенка '{child_name}' (Telegram ID: {callback.from_user.id})")
-    
-    # Передаем и имя ребенка и Telegram ID для надежности
-    stars_earned = db.complete_task(task_id, child_name)
-    
-    if stars_earned > 0:
-        # Получаем обновленное количество звезд
-        current_stars = db.get_child_stars(child_name)
-        
-        print(f"✅ Задание выполнено! Звезд заработано: {stars_earned}, всего: {current_stars}")
-        
+    if earned_stars > 0:
+        current_stars = db.get_child_stars(current_child)
         await callback.message.edit_text(
-            f"🎉 Задание выполнено! Ты получил {stars_earned} звезд!\n\n"
-            f"⭐ Теперь у тебя: {current_stars} звезд"
+            f"🎉 Задание выполнено!\n"
+            f"💫 Получено: {earned_stars}⭐\n"
+            f"💰 Теперь у тебя: {current_stars}⭐"
         )
     else:
-        print(f"❌ Не удалось выполнить задание {task_id}")
-        await callback.message.edit_text("❌ Не удалось выполнить задание. Возможно, оно уже выполнено.")
+        await callback.message.edit_text("❌ Не удалось выполнить задание")
     
     await callback.answer()
 
-def exchange_stars(self, user_id, prize_id):
-    """Обменять звезды на приз"""
-    conn = self._get_connection()
-    cursor = conn.cursor()
+# СМЕНА РЕБЕНКА
+@router.message(lambda message: message.text == "🔄 Сменить ребенка")
+async def cmd_switch_child(message: types.Message):
+    children = db.get_all_children()
+    if len(children) <= 1:
+        await message.answer("❌ Нет других детей для переключения")
+        return
     
-    try:
-        print(f"🔍 Начинаем обмен: user_id={user_id}, prize_id={prize_id}")
-        
-        # Получаем информацию о пользователе
-        cursor.execute('SELECT user_id, stars, child_name, role FROM users WHERE user_id = ?', (user_id,))
-        user_result = cursor.fetchone()
-        
-        if not user_result:
-            print(f"❌ Пользователь с user_id {user_id} не найден")
-            return False
-        
-        user_id_db, user_stars, child_name, role = user_result
-        print(f"👤 Найден пользователь: {child_name} (роль: {role}), звезд: {user_stars}")
-        
-        # Получаем информацию о призе
-        cursor.execute('SELECT prize_text, stars_cost, is_available FROM prizes WHERE id = ?', (prize_id,))
-        prize_result = cursor.fetchone()
-        
-        if not prize_result:
-            print(f"❌ Приз с id {prize_id} не найден")
-            return False
-        
-        prize_text, prize_cost, is_available = prize_result
-        print(f"🎁 Найден приз: {prize_text}, стоимость: {prize_cost}⭐, доступен: {is_available}")
-        
-        if not is_available:
-            print(f"❌ Приз {prize_text} недоступен")
-            return False
-        
-        print(f"💰 Проверка баланса: {user_stars}⭐ >= {prize_cost}⭐ = {user_stars >= prize_cost}")
-        
-        if user_stars < prize_cost:
-            print(f"❌ Недостаточно звезд: {user_stars} < {prize_cost}")
-            return False
-        
-        # Выполняем обмен
-        new_balance = user_stars - prize_cost
-        
-        print(f"💸 Списание звезд: {user_stars} - {prize_cost} = {new_balance}")
-        
-        # Списание звезд
-        cursor.execute(
-            'UPDATE users SET stars = ? WHERE user_id = ?',
-            (new_balance, user_id)
-        )
-        
-        # Запись обмена
-        cursor.execute(
-            'INSERT INTO exchanges (user_id, prize_id, stars_spent) VALUES (?, ?, ?)',
-            (user_id, prize_id, prize_cost)
-        )
-        
-        conn.commit()
-        print(f"✅ Обмен выполнен! {child_name} получил {prize_text}. Новый баланс: {new_balance}⭐")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Ошибка при обмене звезд: {e}")
-        import traceback
-        traceback.print_exc()
-        conn.rollback()
-        return False
-    finally:
-        conn.close()
+    await message.answer("👥 Выберите ребенка:", reply_markup=get_children_keyboard(children))
+
+@router.message(lambda message: message.text in [child.capitalize() for child in db.get_all_children()])
+async def process_switch_child(message: types.Message):
+    child_name = message.text.lower()
+    db.set_current_child(message.from_user.id, child_name)
+    stars = db.get_child_stars(child_name)
+    
+    await message.answer(
+        f"✅ Теперь вы {child_name.capitalize()}!\n⭐ Звезды: {stars}",
+        reply_markup=get_main_child_keyboard()
+    )
+
+# ВЫХОД
+@router.message(lambda message: message.text == "🚪 Выход")
+async def cmd_logout(message: types.Message):
+    db.set_current_child(message.from_user.id, None)
+    await message.answer("👋 Вы вышли!", reply_markup=types.ReplyKeyboardRemove())
