@@ -1,14 +1,16 @@
 import os
+from dotenv import dotenv_values
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+config = dotenv_values(".env")
 
+BOT_TOKEN = config.get("BOT_TOKEN")
 
-ADMIN_PASSWORD = "parent123"
+ADMIN_PASSWORD = config.get("ADMIN_PASSWORD")
 
 # Пароли для каждого пользователя
 PASSWORDS = {
-    "parent": "parent123",
-    "djama": "djama123", 
-    "ramz": "ramz123",
-    "riza": "riza123"
+    "parent": config.get("ADMIN_PASSWORD"),
+    "djama": config.get("DJAMA_PASSWORD"),
+    "ramz": config.get("RAMZ_PASSWORD"),
+    "riza": config.get("RIZA_PASSWORD")
 }
