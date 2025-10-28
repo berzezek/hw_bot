@@ -1,4 +1,8 @@
-BOT_TOKEN = "8346367133:AAHEgw9jnGFpjec9gwFSzEySRzm7t_UFPc0"
+import os
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+
 ADMIN_PASSWORD = "parent123"
 
 # Пароли для каждого пользователя
