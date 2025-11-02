@@ -1,31 +1,5 @@
 import asyncio
-import logging
-import sys
-from pathlib import Path
-from datetime import datetime
-
-# Настройка логирования
-def setup_logging():
-    """Настройка системы логирования"""
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
-    
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-        handlers=[
-            logging.FileHandler(f'logs/bot_{datetime.now().strftime("%Y%m%d")}.log', encoding='utf-8'),
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
-    
-    # Уменьшаем шум от библиотек
-    logging.getLogger('aiogram').setLevel(logging.WARNING)
-    logging.getLogger('aiohttp').setLevel(logging.WARNING)
-    logging.getLogger('asyncio').setLevel(logging.WARNING)
-
-logger = logging.getLogger("main")
+from config import logger, setup_logging
 
 async def wait_for_internet():
     """Ожидание интернет-подключения"""

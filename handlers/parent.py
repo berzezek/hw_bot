@@ -74,35 +74,36 @@ async def cmd_add_weekly_tasks(message: types.Message):
         reply_markup=get_main_parent_keyboard()
     )
 
-# СТАТИСТИКА
-@router.message(lambda message: message.text == "📊 Статистика")
-async def cmd_statistics(message: types.Message):
+@router.message(lambda message: message.text  == "📊 Статистика")
+async def cmd_tasks_and_stats(message: types.Message):
     from datetime import datetime
-    
-    # Получаем статистику (уже исключая обнуленные задания)
+
     stats = db.get_statistics()
-    
-    stats_text = "📊 <b>Активная статистика</b>\n\n"
-    stats_text += f"✅ Выполнено (награждено): <b>{stats['total_completed']}</b> заданий\n"
-    stats_text += f"📝 Ожидает выполнения: <b>{stats['total_pending']}</b> заданий\n\n"
-    
-    # Статистика по детям
+    tasks = db.get_tasks()
+
+    text = "📋 <b>Задания и статистика</b>\n\n"
+
+    # Общая статистика
+    text += f"✅ Выполнено: <b>{stats['total_completed']}</b>\n"
+    text += f"📝 Ожидает выполнения: <b>{stats['total_pending']}</b>\n\n"
+
+    # По детям
     for child_name, child_stats in stats["children"].items():
-        stats_text += f"👤 <b>{child_name.capitalize()}</b>\n"
-        stats_text += f"   ✅ {child_stats['completed']} | 📝 {child_stats['pending']} | ⭐ {child_stats['stars']}\n\n"
-    
-    # Последние выполненные задания (только активные)
+        text += (
+            f"👤 <b>{child_name.capitalize()}</b>\n"
+            f"   ✅ {child_stats['completed']} | 📝 {child_stats['pending']} | ⭐ {child_stats['stars']}\n\n"
+        )
+
+    # Последние выполненные задания
     recent_tasks_all = []
     for child_name, child_stats in stats["children"].items():
-        for task in child_stats["recent_tasks"]:
-            recent_tasks_all.append(task)
-    
-    # Сортируем по дате выполнения и берем последние 5
+        recent_tasks_all.extend(child_stats["recent_tasks"])
+
     recent_tasks_all.sort(key=lambda x: x[6] or "", reverse=True)
     recent_tasks = recent_tasks_all[:5]
-    
+
     if recent_tasks:
-        stats_text += "🕒 <b>Последние выполнения:</b>\n"
+        text += "🕒 <b>Последние выполненные:</b>\n"
         for task in recent_tasks:
             task_id, child_name, task_text, stars_reward, is_completed, is_weekly, completed_at, created_at = task
             if completed_at:
@@ -111,9 +112,27 @@ async def cmd_statistics(message: types.Message):
                     time_str = dt.strftime("%d.%m %H:%M")
                 except:
                     time_str = "недавно"
-                stats_text += f"   {child_name.capitalize()}: {task_text} ({time_str})\n"
-    
-    await message.answer(stats_text, parse_mode="HTML")
+                text += f"   {child_name.capitalize()}: {task_text} ({stars_reward}⭐, {time_str})\n"
+        text += "\n"
+
+    # Список текущих активных заданий
+    if tasks:
+        tasks_dict = {}
+        for task in tasks:
+            if task[1] not in tasks_dict:
+                tasks_dict[task[1]] = []
+            tasks_dict[task[1]].append(task)
+
+        text += "📝 <b>Активные задания:</b>\n\n"
+        for child_name, child_tasks in tasks_dict.items():
+            text += f"👶 {child_name.capitalize()}:\n"
+            for task in child_tasks:
+                text += f"   - {task[2]} ({task[3]}⭐)\n"
+            text += "\n"
+    else:
+        text += "❌ Активных заданий нет.\n"
+
+    await message.answer(text, parse_mode="HTML", reply_markup=get_main_parent_keyboard())
 
 # Награждение
 @router.message(lambda message: message.text == "💵 Наградить")
